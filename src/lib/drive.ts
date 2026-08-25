@@ -158,13 +158,13 @@ export async function moveItem(
   id: string,
   destinationId: string | null,
 ) {
-  const patch = kind === "file" ? { folder_id: destinationId } : { parent_id: destinationId };
-  const { error } = await supabase
-    .from(kind === "file" ? "files" : "folders")
-    .update(patch)
-    .eq("id", id);
+  const { error } =
+    kind === "file"
+      ? await supabase.from("files").update({ folder_id: destinationId }).eq("id", id)
+      : await supabase.from("folders").update({ parent_id: destinationId }).eq("id", id);
   if (error) throw error;
 }
+
 
 export async function trashItem(kind: "file" | "folder", id: string) {
   const { error } = await supabase
