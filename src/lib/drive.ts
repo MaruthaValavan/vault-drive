@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "./api";
 
 export type DriveFolder = {
   id: string;
@@ -32,125 +32,66 @@ export function formatBytes(bytes: number) {
 }
 
 export async function listFolders(parentId: string | null) {
-  let query = supabase.from("folders").select("*").eq("is_deleted", false);
-  query = parentId ? query.eq("parent_id", parentId) : query.is("parent_id", null);
-  const { data, error } = await query.order("name");
-  if (error) throw error;
-  return (data ?? []) as DriveFolder[];
+  const qs = parentId ? `?parentId=${encodeURIComponent(parentId)}` : "";
+  return (await apiFetch(`/api/folders${qs}`)) as DriveFolder[];
 }
 
 export async function listFiles(folderId: string | null) {
-  let query = supabase.from("files").select("*").eq("is_deleted", false);
-  query = folderId ? query.eq("folder_id", folderId) : query.is("folder_id", null);
-  const { data, error } = await query.order("name");
-  if (error) throw error;
-  return (data ?? []) as DriveFile[];
+  const qs = folderId ? `?folderId=${encodeURIComponent(folderId)}` : "";
+  return (await apiFetch(`/api/files${qs}`)) as DriveFile[];
 }
 
 export async function listAllFolders() {
-  const { data, error } = await supabase
-    .from("folders")
-    .select("*")
-    .eq("is_deleted", false)
-    .order("name");
-  if (error) throw error;
-  return (data ?? []) as DriveFolder[];
+  return (await apiFetch("/api/folders/all")) as DriveFolder[];
 }
 
 export async function searchFiles(term: string) {
-  const { data, error } = await supabase
-    .from("files")
-    .select("*")
-    .eq("is_deleted", false)
-    .ilike("name", `%${term}%`)
-    .order("updated_at", { ascending: false })
-    .limit(100);
-  if (error) throw error;
-  return (data ?? []) as DriveFile[];
+  return (await apiFetch(`/api/files/search?q=${encodeURIComponent(term)}`)) as DriveFile[];
 }
 
 export async function listTrash() {
-  const [files, folders] = await Promise.all([
-    supabase
-      .from("files")
-      .select("*")
-      .eq("is_deleted", true)
-      .order("deleted_at", { ascending: false }),
-    supabase
-      .from("folders")
-      .select("*")
-      .eq("is_deleted", true)
-      .order("deleted_at", { ascending: false }),
-  ]);
-  if (files.error) throw files.error;
-  if (folders.error) throw folders.error;
-  return {
-    files: (files.data ?? []) as DriveFile[],
-    folders: (folders.data ?? []) as DriveFolder[],
+  return (await apiFetch("/api/trash")) as {
+    files: DriveFile[];
+    folders: DriveFolder[];
   };
 }
 
 export async function breadcrumbFor(folderId: string | null) {
-  const trail: DriveFolder[] = [];
-  let current = folderId;
-  while (current) {
-    const { data, error } = await supabase
-      .from("folders")
-      .select("*")
-      .eq("id", current)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) break;
-    const folder = data as DriveFolder;
-    trail.unshift(folder);
-    current = folder.parent_id;
-  }
-  return trail;
+  if (!folderId) return [];
+  return (await apiFetch(
+    `/api/folders/trail?folderId=${encodeURIComponent(folderId)}`,
+  )) as DriveFolder[];
 }
 
 export async function createFolder(name: string, parentId: string | null) {
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) throw new Error("Not signed in");
-  const { error } = await supabase
-    .from("folders")
-    .insert({ name, parent_id: parentId, owner_id: auth.user.id });
-  if (error) throw error;
+  await apiFetch("/api/folders", {
+    method: "POST",
+    body: JSON.stringify({ name, parentId }),
+  });
 }
 
 export async function uploadFile(file: File, folderId: string | null) {
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) throw new Error("Not signed in");
-  const key = `${auth.user.id}/${crypto.randomUUID()}-${file.name.replace(/[^\w.\-]/g, "_")}`;
-  const { error: upErr } = await supabase.storage.from("drive").upload(key, file, {
-    contentType: file.type || "application/octet-stream",
-    upsert: false,
+  const form = new FormData();
+  form.append("file", file);
+  if (folderId) form.append("folderId", folderId);
+  await apiFetch("/api/files", {
+    method: "POST",
+    body: form,
   });
-  if (upErr) throw upErr;
-  const { error } = await supabase.from("files").insert({
-    name: file.name,
-    mime_type: file.type || null,
-    size_bytes: file.size,
-    storage_key: key,
-    folder_id: folderId,
-    owner_id: auth.user.id,
-  });
-  if (error) throw error;
 }
 
 export async function downloadFile(file: DriveFile) {
-  const { data, error } = await supabase.storage
-    .from("drive")
-    .createSignedUrl(file.storage_key, 60, { download: file.name });
-  if (error) throw error;
-  window.open(data.signedUrl, "_blank", "noopener");
+  const { signedUrl } = (await apiFetch(`/api/files/${file.id}/download`)) as {
+    signedUrl: string;
+  };
+  window.open(signedUrl, "_blank", "noopener");
 }
 
 export async function renameItem(kind: "file" | "folder", id: string, name: string) {
-  const { error } = await supabase
-    .from(kind === "file" ? "files" : "folders")
-    .update({ name })
-    .eq("id", id);
-  if (error) throw error;
+  await apiFetch(`/api/${kind}s/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
 }
 
 export async function moveItem(
@@ -158,37 +99,25 @@ export async function moveItem(
   id: string,
   destinationId: string | null,
 ) {
-  const { error } =
-    kind === "file"
-      ? await supabase.from("files").update({ folder_id: destinationId }).eq("id", id)
-      : await supabase.from("folders").update({ parent_id: destinationId }).eq("id", id);
-  if (error) throw error;
+  const body = kind === "file" ? { folderId: destinationId } : { parentId: destinationId };
+  await apiFetch(`/api/${kind}s/${id}/move`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
 }
 
-
 export async function trashItem(kind: "file" | "folder", id: string) {
-  const { error } = await supabase
-    .from(kind === "file" ? "files" : "folders")
-    .update({ is_deleted: true, deleted_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) throw error;
+  await apiFetch(`/api/${kind}s/${id}/trash`, { method: "PATCH" });
 }
 
 export async function restoreItem(kind: "file" | "folder", id: string) {
-  const { error } = await supabase
-    .from(kind === "file" ? "files" : "folders")
-    .update({ is_deleted: false, deleted_at: null })
-    .eq("id", id);
-  if (error) throw error;
+  await apiFetch(`/api/${kind}s/${id}/restore`, { method: "PATCH" });
 }
 
 export async function purgeFile(file: DriveFile) {
-  await supabase.storage.from("drive").remove([file.storage_key]);
-  const { error } = await supabase.from("files").delete().eq("id", file.id);
-  if (error) throw error;
+  await apiFetch(`/api/files/${file.id}`, { method: "DELETE" });
 }
 
 export async function purgeFolder(id: string) {
-  const { error } = await supabase.from("folders").delete().eq("id", id);
-  if (error) throw error;
+  await apiFetch(`/api/folders/${id}`, { method: "DELETE" });
 }
