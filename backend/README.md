@@ -18,7 +18,7 @@ Separate Node.js + Express backend for the Vaultly cloud storage frontend.
 
 ## Setup
 
-1. Copy the environment file and fill in your Supabase service role key:
+1. Copy the environment file and fill in your backend service role key:
 
    ```bash
    cp .env.example .env
@@ -36,10 +36,11 @@ Separate Node.js + Express backend for the Vaultly cloud storage frontend.
    npm run dev
    ```
 
-   The API will be available at `http://localhost:4000` by default.
+   The API will be available at `http://localhost:4000` by default. Start this
+   service before using the frontend locally.
 
 ## Production notes
 
 - The `SUPABASE_SERVICE_ROLE_KEY` must stay secret. Never commit it or expose it to the browser.
 - Set `CORS_ORIGIN` to the exact URL of your deployed frontend.
-- This backend is designed to be moved to its own repository.
+- This `Backend/` directory is designed to be moved to its own repository.

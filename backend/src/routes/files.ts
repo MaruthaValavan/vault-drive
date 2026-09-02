@@ -5,7 +5,10 @@ import { supabaseAdmin } from "../lib/supabase.js";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth.js";
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+});
 
 router.use(requireAuth);
 
