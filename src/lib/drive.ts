@@ -1,4 +1,5 @@
 import { apiFetch } from "./api";
+import { supabase } from "@/integrations/supabase/client";
 
 export type DriveFolder = {
   id: string;
@@ -74,10 +75,45 @@ export async function uploadFile(file: File, folderId: string | null) {
   const form = new FormData();
   form.append("file", file);
   if (folderId) form.append("folderId", folderId);
-  await apiFetch("/api/files", {
-    method: "POST",
-    body: form,
+
+  try {
+    await apiFetch("/api/files", {
+      method: "POST",
+      body: form,
+    });
+    return;
+  } catch (error) {
+    // The standalone Backend is the primary path. The browser-client fallback
+    // keeps uploads working in the hosted preview, where localhost:4000 is not
+    // available, while still enforcing the signed-in user's storage policies.
+    if (!(error instanceof Error && /file service is unavailable/i.test(error.message))) {
+      throw error;
+    }
+  }
+
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError || !userData.user) throw new Error("Your session has expired. Please sign in again.");
+
+  const safeName = file.name.replace(/[^\w.\-]/g, "_");
+  const storageKey = `${userData.user.id}/${crypto.randomUUID()}-${safeName}`;
+  const { error: uploadError } = await supabase.storage.from("drive").upload(storageKey, file, {
+    contentType: file.type || "application/octet-stream",
+    upsert: false,
   });
+  if (uploadError) throw new Error(uploadError.message);
+
+  const { error: insertError } = await supabase.from("files").insert({
+    name: file.name,
+    mime_type: file.type || null,
+    size_bytes: file.size,
+    storage_key: storageKey,
+    folder_id: folderId,
+    owner_id: userData.user.id,
+  });
+  if (insertError) {
+    await supabase.storage.from("drive").remove([storageKey]);
+    throw new Error(insertError.message);
+  }
 }
 
 export async function downloadFile(file: DriveFile) {
