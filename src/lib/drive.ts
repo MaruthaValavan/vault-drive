@@ -260,10 +260,10 @@ export async function moveItem(
     });
   } catch (error) {
     if (!shouldUseBrowserFallback(error)) throw error;
-    const { error: fallbackError } = await supabase
-      .from(kind === "file" ? "files" : "folders")
-      .update(kind === "file" ? { folder_id: destinationId } : { parent_id: destinationId })
-      .eq("id", id);
+    const fallbackError =
+      kind === "file"
+        ? (await supabase.from("files").update({ folder_id: destinationId }).eq("id", id)).error
+        : (await supabase.from("folders").update({ parent_id: destinationId }).eq("id", id)).error;
     if (fallbackError) throw new Error(fallbackError.message);
   }
 }
