@@ -3,7 +3,11 @@ import { supabase } from "@/integrations/supabase/client";
 export const API_URL = import.meta.env["VITE_API_URL"] ?? "http://localhost:4000";
 
 export function isApiUnavailable(error: unknown) {
-  return error instanceof TypeError || (error instanceof Error && /failed to fetch|networkerror|load failed/i.test(error.message));
+  return (
+    error instanceof TypeError ||
+    (error instanceof Error &&
+      /failed to fetch|networkerror|load failed|file service is unavailable/i.test(error.message))
+  );
 }
 
 export async function apiToken() {
