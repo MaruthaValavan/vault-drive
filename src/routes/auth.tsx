@@ -38,6 +38,7 @@ function AuthPage() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmationSent, setConfirmationSent] = useState(false);
 
   useEffect(() => {
     if (!loading && user) navigate({ to: "/" });
@@ -46,32 +47,56 @@ function AuthPage() {
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setBusy(false);
-    if (error) {
-      toast.error(error.message);
-      return;
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
+      if (error) {
+        if (error.code === "email_not_confirmed") {
+          toast.error("Please confirm your email before signing in.");
+        } else {
+          toast.error(error.message);
+        }
+        return;
+      }
+      await navigate({ to: "/" });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Sign-in failed");
+    } finally {
+      setBusy(false);
     }
-    navigate({ to: "/" });
   }
 
   async function signUp(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/`,
-        data: { full_name: name },
-      },
-    });
-    setBusy(false);
-    if (error) {
-      toast.error(error.message);
-      return;
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim().toLowerCase(),
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/`,
+          data: { full_name: name.trim() },
+        },
+      });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      if (data.session) {
+        await navigate({ to: "/" });
+        return;
+      }
+
+      setConfirmationSent(true);
+      toast.success("Check your email to confirm your account.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Account creation failed");
+    } finally {
+      setBusy(false);
     }
-    toast.success("Account created. Check your inbox if confirmation is required.");
   }
 
   async function google() {
@@ -98,6 +123,13 @@ function AuthPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Sign in to your private cloud drive.
           </p>
+
+           {confirmationSent && (
+             <div className="mt-4 border border-primary/30 bg-primary/10 p-3 text-sm text-foreground">
+               We sent a confirmation link to <strong>{email}</strong>. Confirm it, then use the
+               Sign in tab with the same email and password.
+             </div>
+           )}
 
           <Button variant="secondary" className="mt-6 w-full" onClick={google}>
             Continue with Google
