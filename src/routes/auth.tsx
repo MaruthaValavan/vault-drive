@@ -38,6 +38,7 @@ function AuthPage() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [resending, setResending] = useState(false);
   const [confirmationSent, setConfirmationSent] = useState(false);
 
   useEffect(() => {
@@ -54,6 +55,7 @@ function AuthPage() {
       });
       if (error) {
         if (error.code === "email_not_confirmed") {
+          setConfirmationSent(true);
           toast.error("Please confirm your email before signing in.");
         } else {
           toast.error(error.message);
@@ -65,6 +67,32 @@ function AuthPage() {
       toast.error(error instanceof Error ? error.message : "Sign-in failed");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function resendConfirmation() {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
+      toast.error("Enter your email address first.");
+      return;
+    }
+
+    setResending(true);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: trimmedEmail,
+        options: { emailRedirectTo: `${window.location.origin}/` },
+      });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success("A new confirmation link has been sent.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not resend confirmation email");
+    } finally {
+      setResending(false);
     }
   }
 
@@ -128,6 +156,15 @@ function AuthPage() {
              <div className="mt-4 border border-primary/30 bg-primary/10 p-3 text-sm text-foreground">
                We sent a confirmation link to <strong>{email}</strong>. Confirm it, then use the
                Sign in tab with the same email and password.
+               <Button
+                 type="button"
+                 variant="link"
+                 className="mt-1 h-auto px-0 text-sm"
+                 onClick={() => void resendConfirmation()}
+                 disabled={busy || resending}
+               >
+                 {resending ? "Sending…" : "Resend confirmation email"}
+               </Button>
              </div>
            )}
 
