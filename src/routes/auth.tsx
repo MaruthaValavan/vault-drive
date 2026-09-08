@@ -40,6 +40,8 @@ function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
   const [confirmationSent, setConfirmationSent] = useState(false);
+  const [forgotPassword, setForgotPassword] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   useEffect(() => {
     if (!loading && user) navigate({ to: "/" });
@@ -57,6 +59,10 @@ function AuthPage() {
         if (error.code === "email_not_confirmed") {
           setConfirmationSent(true);
           toast.error("Please confirm your email before signing in.");
+        } else if (error.code === "invalid_credentials") {
+          toast.error(
+            "Email or password is incorrect. If you used Google for this account, choose Continue with Google.",
+          );
         } else {
           toast.error(error.message);
         }
@@ -65,6 +71,32 @@ function AuthPage() {
       await navigate({ to: "/" });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Sign-in failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendPasswordReset(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
+      toast.error("Enter your email address first.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      setResetSent(true);
+      toast.success("If an account exists for that email, a reset link is on its way.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not send the reset email");
     } finally {
       setBusy(false);
     }
@@ -168,7 +200,7 @@ function AuthPage() {
              </div>
            )}
 
-          <Button variant="secondary" className="mt-6 w-full" onClick={google}>
+           <Button variant="secondary" className="mt-6 w-full" onClick={google} disabled={busy}>
             Continue with Google
           </Button>
 
@@ -178,14 +210,54 @@ function AuthPage() {
             <span className="h-px flex-1 bg-border" />
           </div>
 
-          <Tabs defaultValue="signin">
+           <Tabs defaultValue="signin">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="signin">Sign in</TabsTrigger>
               <TabsTrigger value="signup">Create account</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="signin">
-              <form className="mt-4 space-y-4" onSubmit={signIn}>
+             <TabsContent value="signin">
+               {forgotPassword ? (
+                 <form className="mt-4 space-y-4" onSubmit={sendPasswordReset}>
+                   <div>
+                     <h2 className="font-medium">Reset your password</h2>
+                     <p className="mt-1 text-sm text-muted-foreground">
+                       Enter the email used for this account and we’ll send a secure reset link.
+                     </p>
+                   </div>
+                   {resetSent && (
+                     <div className="border border-primary/30 bg-primary/10 p-3 text-sm text-foreground">
+                       Check your email for the reset link. If you do not see it, check spam or
+                       confirm that this is the email used to create the account.
+                     </div>
+                   )}
+                   <div className="space-y-2">
+                     <Label htmlFor="reset-email">Email</Label>
+                     <Input
+                       id="reset-email"
+                       type="email"
+                       required
+                       value={email}
+                       onChange={(e) => setEmail(e.target.value)}
+                     />
+                   </div>
+                   <Button type="submit" className="w-full" disabled={busy}>
+                     {busy && <Loader2 className="h-4 w-4 animate-spin" />} Send reset link
+                   </Button>
+                   <Button
+                     type="button"
+                     variant="link"
+                     className="h-auto w-full"
+                     onClick={() => {
+                       setForgotPassword(false);
+                       setResetSent(false);
+                     }}
+                   >
+                     Back to sign in
+                   </Button>
+                 </form>
+               ) : (
+                 <form className="mt-4 space-y-4" onSubmit={signIn}>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <Input
@@ -209,7 +281,16 @@ function AuthPage() {
                 <Button type="submit" className="w-full" disabled={busy}>
                   {busy && <Loader2 className="h-4 w-4 animate-spin" />} Sign in
                 </Button>
+                 <Button
+                   type="button"
+                   variant="link"
+                   className="h-auto w-full"
+                   onClick={() => setForgotPassword(true)}
+                 >
+                   Forgot password?
+                 </Button>
               </form>
+               )}
             </TabsContent>
 
             <TabsContent value="signup">
