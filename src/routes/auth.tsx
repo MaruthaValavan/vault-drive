@@ -40,6 +40,8 @@ function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
   const [confirmationSent, setConfirmationSent] = useState(false);
+  const [confirmationEmail, setConfirmationEmail] = useState("");
+  const [signInMessage, setSignInMessage] = useState<string | null>(null);
   const [forgotPassword, setForgotPassword] = useState(false);
   const [resetSent, setResetSent] = useState(false);
 
@@ -47,23 +49,40 @@ function AuthPage() {
     if (!loading && user) navigate({ to: "/" });
   }, [loading, user, navigate]);
 
+  function handleEmailChange(value: string) {
+    const nextEmail = value.trim().toLowerCase();
+    setEmail(value);
+    setSignInMessage(null);
+
+    if (confirmationEmail && nextEmail !== confirmationEmail) {
+      setConfirmationSent(false);
+      setConfirmationEmail("");
+    }
+  }
+
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
+    setSignInMessage(null);
     try {
+      const trimmedEmail = email.trim().toLowerCase();
       const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
+        email: trimmedEmail,
         password,
       });
       if (error) {
         if (error.code === "email_not_confirmed") {
+          setConfirmationEmail(trimmedEmail);
           setConfirmationSent(true);
+          setSignInMessage("Confirm your email first, then sign in again.");
           toast.error("Please confirm your email before signing in.");
         } else if (error.code === "invalid_credentials") {
-          toast.error(
-            "Email or password is incorrect. If you used Google for this account, choose Continue with Google.",
+          setSignInMessage(
+            "We could not sign you in with that email and password. If you created this account with Google, choose Continue with Google. Otherwise, use Forgot password? to create a new password.",
           );
+          toast.error("Email or password is incorrect.");
         } else {
+          setSignInMessage(error.message);
           toast.error(error.message);
         }
         return;
@@ -150,6 +169,7 @@ function AuthPage() {
         return;
       }
 
+      setConfirmationEmail(email.trim().toLowerCase());
       setConfirmationSent(true);
       toast.success("Check your email to confirm your account.");
     } catch (error) {
@@ -186,8 +206,8 @@ function AuthPage() {
 
            {confirmationSent && (
              <div className="mt-4 border border-primary/30 bg-primary/10 p-3 text-sm text-foreground">
-               We sent a confirmation link to <strong>{email}</strong>. Confirm it, then use the
-               Sign in tab with the same email and password.
+                We sent a confirmation link to <strong>{confirmationEmail || email}</strong>.
+                Confirm it, then use the Sign in tab with the same email and password.
                <Button
                  type="button"
                  variant="link"
@@ -199,6 +219,12 @@ function AuthPage() {
                </Button>
              </div>
            )}
+
+            {signInMessage && (
+              <div className="mt-4 border border-destructive/30 bg-destructive/10 p-3 text-sm text-foreground" role="alert">
+                {signInMessage}
+              </div>
+            )}
 
            <Button variant="secondary" className="mt-6 w-full" onClick={google} disabled={busy}>
             Continue with Google
@@ -265,7 +291,7 @@ function AuthPage() {
                     type="email"
                     required
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                     onChange={(e) => handleEmailChange(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
@@ -306,7 +332,7 @@ function AuthPage() {
                     type="email"
                     required
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                     onChange={(e) => handleEmailChange(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
